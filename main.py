@@ -19,8 +19,9 @@ Usage:
 # GPU ENVIRONMENT — MUST be before any TF/Keras imports
 # ============================================================
 import os
-os.environ.setdefault('CUDA_VISIBLE_DEVICES', '0')         # Force GPU 0
-os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'            # Dynamic memory
+# GPU disabled: CUDA kernel launches fail on this VM (CUDA_ERROR_INVALID_HANDLE).
+# CPU training is fine for ~3700 samples — takes only a few minutes.
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'                    # Reduce TF noise
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'                   # Stability
 
