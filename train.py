@@ -8,10 +8,13 @@ Handles training for:
 4. Attention-enhanced CNN
 5. Curriculum learning (human rote learning simulation)
 
-Optimized for NVIDIA H200 GPU with large batch sizes and mixed precision.
+Optimized for NVIDIA H200 GPU.
 """
 
 import os
+os.environ.setdefault('TF_FORCE_GPU_ALLOW_GROWTH', 'true')
+os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '2')
+
 import pickle
 import numpy as np
 import tensorflow as tf

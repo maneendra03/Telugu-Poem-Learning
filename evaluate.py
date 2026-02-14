@@ -9,6 +9,9 @@ Generates comprehensive evaluation metrics and visualizations:
 """
 
 import os
+os.environ.setdefault('TF_FORCE_GPU_ALLOW_GROWTH', 'true')
+os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '2')
+
 import pickle
 import numpy as np
 import matplotlib

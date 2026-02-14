@@ -1,6 +1,9 @@
 """
 Main Entry Point for CNN Telugu Poem Classification System.
 
+CRITICAL: GPU environment variables MUST be set before importing TensorFlow.
+This file sets them at the top, before any other imports.
+
 Usage:
     python main.py --mode train         # Train CNN + Multi-task
     python main.py --mode train-all     # Train ALL models (CNN, BiLSTM, Attention, Curriculum)
@@ -12,13 +15,19 @@ Usage:
     python main.py --mode compare       # Compare all trained models
 """
 
-import argparse
+# ============================================================
+# GPU ENVIRONMENT — MUST be before any TF/Keras imports
+# ============================================================
 import os
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'       # Reduce TF spam
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'       # Disable oneDNN for stability
+
+import argparse
 import sys
 import pickle
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 import config
 from model import configure_gpu, SelfAttention
@@ -33,6 +42,7 @@ from evaluate import (
     analyze_misclassifications, compare_models
 )
 from interpretation import get_interpretation
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 
 def run_train(mode: str = 'both'):

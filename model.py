@@ -31,6 +31,18 @@ def configure_gpu():
             except RuntimeError:
                 pass  # Already configured
         print(f"[GPU] Found {len(gpus)} GPU(s): {[g.name for g in gpus]}")
+
+        # CUDA warmup: force GPU context initialization before model building.
+        # This prevents CUDA_ERROR_INVALID_HANDLE during layer creation.
+        try:
+            with tf.device('/GPU:0'):
+                _ = tf.constant(1.0) + tf.constant(1.0)
+            print("[GPU] CUDA context initialized successfully")
+        except Exception as e:
+            print(f"[GPU] Warning: CUDA warmup failed ({e}), falling back to CPU")
+            # If GPU warmup fails, disable GPU entirely
+            tf.config.set_visible_devices([], 'GPU')
+            print("[GPU] GPU disabled — running on CPU")
     else:
         print("[GPU] No GPU detected — running on CPU")
 
