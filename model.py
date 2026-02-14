@@ -22,18 +22,15 @@ import config
 def configure_gpu():
     """
     Configure GPU settings. Uses environment variables set before TF import.
-    If GPU has CUDA issues, falls back gracefully to CPU.
+    Enables soft device placement so TF auto-falls back to CPU when GPU ops fail.
     """
+    # Enable soft device placement — auto-fallback to CPU for failed GPU ops
+    tf.config.set_soft_device_placement(True)
+
     gpus = tf.config.list_physical_devices('GPU')
     if gpus:
         print(f"[GPU] Found {len(gpus)} GPU(s): {[g.name for g in gpus]}")
-        # Test if GPU actually works by running a tiny operation
-        try:
-            result = tf.reduce_sum(tf.ones([2, 2]))
-            print(f"[GPU] CUDA operational (test={result.numpy():.0f})")
-        except Exception as e:
-            print(f"[GPU] ⚠️  CUDA error detected: {e}")
-            print("[GPU] Training will proceed — TF may auto-fallback to CPU ops")
+        print("[GPU] Soft device placement enabled (auto CPU fallback)")
     else:
         print("[GPU] No GPU detected — running on CPU")
 
@@ -54,7 +51,7 @@ def build_cnn_model(n_classes: int, name: str = "chandas_cnn") -> Model:
     poetic rhythm: first detecting syllable-level patterns (Conv1),
     then phrase-level meter (Conv2), then overall structure (Conv3).
     """
-    # Build on CPU to avoid Keras 3 CUDA variable init issues.
+    # Build everything on CPU to avoid Keras 3 CUDA variable init issues.
     # GPU is used automatically during model.fit() for computation.
     with tf.device('/cpu:0'):
         input_layer = Input(shape=(config.MAX_SEQ_LEN,), name='text_input')
@@ -95,11 +92,11 @@ def build_cnn_model(n_classes: int, name: str = "chandas_cnn") -> Model:
 
         model = Model(inputs=input_layer, outputs=output, name=name)
 
-    model.compile(
-        optimizer=Adam(learning_rate=config.LEARNING_RATE),
-        loss='categorical_crossentropy',
-        metrics=['accuracy']
-    )
+        model.compile(
+            optimizer=Adam(learning_rate=config.LEARNING_RATE),
+            loss='categorical_crossentropy',
+            metrics=['accuracy']
+        )
     return model
 
 
@@ -161,21 +158,21 @@ def build_multitask_cnn(n_chandas: int, n_source: int,
             name=name
         )
 
-    model.compile(
-        optimizer=Adam(learning_rate=config.LEARNING_RATE),
-        loss={
-            'chandas_output': 'categorical_crossentropy',
-            'source_output': 'categorical_crossentropy'
-        },
-        loss_weights={
-            'chandas_output': config.CHANDAS_LOSS_WEIGHT,
-            'source_output': config.SOURCE_LOSS_WEIGHT
-        },
-        metrics={
-            'chandas_output': ['accuracy'],
-            'source_output': ['accuracy']
-        }
-    )
+        model.compile(
+            optimizer=Adam(learning_rate=config.LEARNING_RATE),
+            loss={
+                'chandas_output': 'categorical_crossentropy',
+                'source_output': 'categorical_crossentropy'
+            },
+            loss_weights={
+                'chandas_output': config.CHANDAS_LOSS_WEIGHT,
+                'source_output': config.SOURCE_LOSS_WEIGHT
+            },
+            metrics={
+                'chandas_output': ['accuracy'],
+                'source_output': ['accuracy']
+            }
+        )
 
     return model
 
@@ -221,11 +218,11 @@ def build_bilstm_model(n_classes: int, name: str = "bilstm_chandas") -> Model:
 
         model = Model(inputs=input_layer, outputs=output, name=name)
 
-    model.compile(
-        optimizer=Adam(learning_rate=config.LEARNING_RATE),
-        loss='categorical_crossentropy',
-        metrics=['accuracy']
-    )
+        model.compile(
+            optimizer=Adam(learning_rate=config.LEARNING_RATE),
+            loss='categorical_crossentropy',
+            metrics=['accuracy']
+        )
     return model
 
 
@@ -327,11 +324,11 @@ def build_attention_cnn_model(n_classes: int,
 
         model = Model(inputs=input_layer, outputs=output, name=name)
 
-    model.compile(
-        optimizer=Adam(learning_rate=config.LEARNING_RATE),
-        loss='categorical_crossentropy',
-        metrics=['accuracy']
-    )
+        model.compile(
+            optimizer=Adam(learning_rate=config.LEARNING_RATE),
+            loss='categorical_crossentropy',
+            metrics=['accuracy']
+        )
     return model
 
 
