@@ -47,20 +47,23 @@ def get_callbacks(model_path: str, monitor: str = 'val_loss') -> list:
             monitor=monitor,
             patience=config.EARLY_STOP_PATIENCE,
             restore_best_weights=True,
-            verbose=1
+            verbose=1,
+            mode='min'
         ),
         ModelCheckpoint(
             filepath=model_path,
             monitor=monitor,
             save_best_only=True,
-            verbose=1
+            verbose=1,
+            mode='min'
         ),
         ReduceLROnPlateau(
             monitor=monitor,
             factor=config.REDUCE_LR_FACTOR,
             patience=config.REDUCE_LR_PATIENCE,
             min_lr=1e-6,
-            verbose=1
+            verbose=1,
+            mode='min'
         ),
     ]
     return callbacks
