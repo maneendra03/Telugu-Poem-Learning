@@ -124,5 +124,5 @@ TFIDF_TOP_N = 10
 # ============================================================
 # GPU CONFIGURATION
 # ============================================================
-MIXED_PRECISION = True          # Use FP16 on H200 for faster training
-GPU_MEMORY_GROWTH = True        # Allow dynamic GPU memory allocation
+MIXED_PRECISION = False          # Disabled — causes CUDA init issues on cloud VMs
+GPU_MEMORY_GROWTH = True         # Allow dynamic GPU memory allocation

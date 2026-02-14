@@ -189,7 +189,7 @@ def load_chandassu_scores() -> dict:
     Higher scores = easier/clearer examples for the model to learn from.
 
     Returns:
-        Dictionary mapping first 100 chars of text → chandassu_score
+        Dictionary mapping first 100 chars of cleaned text → chandassu_score
     """
     import csv
 
@@ -199,10 +199,12 @@ def load_chandassu_scores() -> dict:
             reader = csv.DictReader(f)
             for row in reader:
                 try:
-                    text_key = row.get('raw_padyam_text', '')[:100].strip()
+                    raw_text = row.get('raw_padyam_text', '')
+                    # Clean the key the same way we clean poem text
+                    cleaned_key = clean_text(raw_text)[:100].strip()
                     score = float(row.get('chandassu_score', 0))
-                    if text_key and score > 0:
-                        scores[text_key] = score
+                    if cleaned_key and score > 0:
+                        scores[cleaned_key] = score
                 except (ValueError, TypeError):
                     continue
         print(f"[Curriculum] Loaded {len(scores)} chandassu scores from CSV")
@@ -239,11 +241,11 @@ def prepare_curriculum_data(train_df, val_df, test_df):
     # Load chandassu scores
     scores = load_chandassu_scores()
 
-    # Match scores to training data
+    # Match scores to training data using cleaned text keys
     train_scores = []
     for _, row in train_df.iterrows():
         key = str(row['text'])[:100].strip()
-        train_scores.append(scores.get(key, 0.5))  # Default 0.5 if no score
+        train_scores.append(scores.get(key, 0.5))  # Default 0.5 if no match
 
     train_df = train_df.copy()
     train_df['chandassu_score'] = train_scores
