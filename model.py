@@ -18,12 +18,7 @@ import config
 
 def configure_gpu():
     """Configure GPU settings for optimal H200 performance."""
-    # Enable mixed precision (FP16) for faster computation on H200
-    if config.MIXED_PRECISION:
-        tf.keras.mixed_precision.set_global_policy('mixed_float16')
-        print("[GPU] Mixed precision (FP16) enabled for H200")
-
-    # Dynamic memory growth
+    # IMPORTANT: Set memory growth FIRST, before any GPU operations
     if config.GPU_MEMORY_GROWTH:
         gpus = tf.config.list_physical_devices('GPU')
         if gpus:
@@ -32,6 +27,12 @@ def configure_gpu():
             print(f"[GPU] Found {len(gpus)} GPU(s): {[g.name for g in gpus]}")
         else:
             print("[GPU] No GPU detected — running on CPU")
+
+    # Enable mixed precision AFTER GPU is configured
+    if config.MIXED_PRECISION:
+        # H200 has native BF16 support — use it for better stability
+        tf.keras.mixed_precision.set_global_policy('mixed_bfloat16')
+        print("[GPU] Mixed precision (BF16) enabled for H200")
 
 
 def build_cnn_model(n_classes: int, name: str = "chandas_cnn") -> Model:
