@@ -161,6 +161,8 @@ def prepare_features(train_df: pd.DataFrame,
 
     # ---- Save tokenizer & encoders ----
     print("\n--- Saving Tokenizer & Encoders ---")
+    import os
+    os.makedirs(config.MODEL_DIR, exist_ok=True)
     with open(config.TOKENIZER_PATH, 'wb') as f:
         pickle.dump(tokenizer, f)
     with open(config.CHANDAS_ENCODER_PATH, 'wb') as f:
