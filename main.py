@@ -19,9 +19,10 @@ Usage:
 # GPU ENVIRONMENT — MUST be before any TF/Keras imports
 # ============================================================
 import os
-os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'       # Reduce TF spam
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'       # Disable oneDNN for stability
+os.environ.setdefault('CUDA_VISIBLE_DEVICES', '0')         # Force GPU 0
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'            # Dynamic memory
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'                    # Reduce TF noise
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'                   # Stability
 
 import argparse
 import sys

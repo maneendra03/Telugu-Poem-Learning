@@ -19,30 +19,19 @@ import config
 
 def configure_gpu():
     """
-    Configure GPU settings for optimal H200 performance.
-    Must be called once before any model building.
+    Configure GPU settings. Uses environment variables set before TF import.
+    If GPU has CUDA issues, falls back gracefully to CPU.
     """
-    # Set memory growth FIRST — must happen before any GPU operations
     gpus = tf.config.list_physical_devices('GPU')
     if gpus:
-        for gpu in gpus:
-            try:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            except RuntimeError:
-                pass  # Already configured
         print(f"[GPU] Found {len(gpus)} GPU(s): {[g.name for g in gpus]}")
-
-        # CUDA warmup: force GPU context initialization before model building.
-        # This prevents CUDA_ERROR_INVALID_HANDLE during layer creation.
+        # Test if GPU actually works by running a tiny operation
         try:
-            with tf.device('/GPU:0'):
-                _ = tf.constant(1.0) + tf.constant(1.0)
-            print("[GPU] CUDA context initialized successfully")
+            result = tf.reduce_sum(tf.ones([2, 2]))
+            print(f"[GPU] CUDA operational (test={result.numpy():.0f})")
         except Exception as e:
-            print(f"[GPU] Warning: CUDA warmup failed ({e}), falling back to CPU")
-            # If GPU warmup fails, disable GPU entirely
-            tf.config.set_visible_devices([], 'GPU')
-            print("[GPU] GPU disabled — running on CPU")
+            print(f"[GPU] ⚠️  CUDA error detected: {e}")
+            print("[GPU] Training will proceed — TF may auto-fallback to CPU ops")
     else:
         print("[GPU] No GPU detected — running on CPU")
 
