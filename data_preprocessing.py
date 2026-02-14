@@ -181,7 +181,104 @@ def prepare_dataset() -> tuple:
     return train_df, val_df, test_df
 
 
+def load_chandassu_scores() -> dict:
+    """
+    Load chandassu_score values from the raw CSV for curriculum learning.
+
+    These scores indicate how clearly a poem conforms to its stated meter.
+    Higher scores = easier/clearer examples for the model to learn from.
+
+    Returns:
+        Dictionary mapping first 100 chars of text → chandassu_score
+    """
+    import csv
+
+    scores = {}
+    try:
+        with open(config.CSV_PATH, 'r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    text_key = row.get('raw_padyam_text', '')[:100].strip()
+                    score = float(row.get('chandassu_score', 0))
+                    if text_key and score > 0:
+                        scores[text_key] = score
+                except (ValueError, TypeError):
+                    continue
+        print(f"[Curriculum] Loaded {len(scores)} chandassu scores from CSV")
+    except Exception as e:
+        print(f"[Curriculum] Warning: Could not load scores: {e}")
+
+    return scores
+
+
+def prepare_curriculum_data(train_df, val_df, test_df):
+    """
+    Split training data into curriculum phases for human rote learning simulation.
+
+    PHASE 1 — "Easy poems": High chandassu_score poems with clear, regular meter.
+    These are like a student first learning to recognize perfect examples of each meter.
+
+    PHASE 2 — "All poems": The full dataset including irregular/harder examples.
+    This is like a student graduating to more complex and varied poetry.
+
+    Args:
+        train_df, val_df, test_df: DataFrames from prepare_dataset()
+
+    Returns:
+        Dictionary with 'easy_train', 'full_train', 'val', 'test' DataFrames
+    """
+    if not config.CURRICULUM_ENABLED:
+        return {
+            'easy_train': train_df,
+            'full_train': train_df,
+            'val': val_df,
+            'test': test_df
+        }
+
+    # Load chandassu scores
+    scores = load_chandassu_scores()
+
+    # Match scores to training data
+    train_scores = []
+    for _, row in train_df.iterrows():
+        key = str(row['text'])[:100].strip()
+        train_scores.append(scores.get(key, 0.5))  # Default 0.5 if no score
+
+    train_df = train_df.copy()
+    train_df['chandassu_score'] = train_scores
+
+    # Split into easy and full
+    easy_mask = train_df['chandassu_score'] >= config.CURRICULUM_EASY_THRESHOLD
+    easy_train = train_df[easy_mask].copy()
+
+    print(f"\n[Curriculum] Phase 1 (easy, score >= {config.CURRICULUM_EASY_THRESHOLD}): "
+          f"{len(easy_train)} poems")
+    print(f"[Curriculum] Phase 2 (all): {len(train_df)} poems")
+
+    if len(easy_train) < 50:
+        print("[Curriculum] Warning: Very few easy poems found. Using all data for both phases.")
+        easy_train = train_df.copy()
+
+    # Print distribution of easy subset
+    if len(easy_train) > 0:
+        print(f"[Curriculum] Easy subset chandas distribution:")
+        print(f"  {easy_train['chandas'].value_counts().to_string()}")
+
+    return {
+        'easy_train': easy_train,
+        'full_train': train_df,
+        'val': val_df,
+        'test': test_df
+    }
+
+
 if __name__ == "__main__":
     train, val, test = prepare_dataset()
     print("\nSample training data:")
     print(train[['text', 'chandas', 'class', 'source']].head())
+
+    # Test curriculum learning
+    curriculum = prepare_curriculum_data(train, val, test)
+    print(f"\nCurriculum easy: {len(curriculum['easy_train'])}")
+    print(f"Curriculum full: {len(curriculum['full_train'])}")

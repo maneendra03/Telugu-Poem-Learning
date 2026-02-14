@@ -215,17 +215,228 @@ def build_multitask_cnn(n_chandas: int, n_source: int,
     return model
 
 
+# ============================================================
+# IMPROVEMENT 1: BiLSTM Baseline Model
+# ============================================================
+
+def build_bilstm_model(n_classes: int, name: str = "bilstm_chandas") -> Model:
+    """
+    Build a Bidirectional LSTM baseline model for comparison with CNN.
+
+    While CNN captures LOCAL spatial patterns (syllable groups, gaṇas),
+    BiLSTM captures SEQUENTIAL dependencies (long-range rhythm flow).
+    Comparing both reveals which aspect matters more for Telugu meter.
+
+    Architecture:
+        Embedding(30000, 200) → input_length=400
+        Bidirectional(LSTM(128, return_sequences=True))
+        Bidirectional(LSTM(64))
+        Dropout(0.4) → Dense(128, relu) → Dropout(0.3)
+        Dense(n_classes, softmax)
+
+    Args:
+        n_classes: Number of output classes
+        name: Model name string
+
+    Returns:
+        Compiled Keras Model
+    """
+    input_layer = Input(shape=(config.MAX_SEQ_LEN,), name='text_input')
+
+    # Embedding
+    x = layers.Embedding(
+        input_dim=config.VOCAB_SIZE,
+        output_dim=config.EMBEDDING_DIM,
+        input_length=config.MAX_SEQ_LEN,
+        name='embedding'
+    )(input_layer)
+
+    # Bidirectional LSTM stack — captures forward + backward rhythm flow
+    x = layers.Bidirectional(
+        layers.LSTM(config.LSTM_UNITS, return_sequences=True,
+                    dropout=config.LSTM_DROPOUT, recurrent_dropout=0.1),
+        name='bilstm_1'
+    )(x)
+    x = layers.Bidirectional(
+        layers.LSTM(config.LSTM_UNITS // 2,
+                    dropout=config.LSTM_DROPOUT, recurrent_dropout=0.1),
+        name='bilstm_2'
+    )(x)
+
+    # Classification head
+    x = layers.Dropout(config.DROPOUT_RATE, name='dropout1')(x)
+    x = layers.Dense(config.DENSE2_UNITS, activation='relu', name='dense1')(x)
+    x = layers.Dropout(0.3, name='dropout2')(x)
+    output = layers.Dense(n_classes, activation='softmax',
+                          dtype='float32', name='output')(x)
+
+    model = Model(inputs=input_layer, outputs=output, name=name)
+
+    model.compile(
+        optimizer=Adam(learning_rate=config.LEARNING_RATE),
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
+
+    return model
+
+
+# ============================================================
+# IMPROVEMENT 2: Self-Attention Layer + Attention CNN
+# ============================================================
+
+class SelfAttention(layers.Layer):
+    """
+    Self-Attention layer that learns which positions in the sequence
+    are most important for classification.
+
+    In the context of Telugu poetry, this mimics how humans focus on
+    specific syllable positions where yati (caesura) and prasa (rhyme)
+    occur — the metrically distinctive parts of each line.
+
+    Produces attention weights that can be visualized to interpret
+    which parts of a poem the model considers important.
+    """
+
+    def __init__(self, attention_units: int = 64, **kwargs):
+        super(SelfAttention, self).__init__(**kwargs)
+        self.attention_units = attention_units
+
+    def build(self, input_shape):
+        self.W = self.add_weight(
+            name='attention_weight',
+            shape=(input_shape[-1], self.attention_units),
+            initializer='glorot_uniform',
+            trainable=True
+        )
+        self.b = self.add_weight(
+            name='attention_bias',
+            shape=(self.attention_units,),
+            initializer='zeros',
+            trainable=True
+        )
+        self.u = self.add_weight(
+            name='attention_context',
+            shape=(self.attention_units, 1),
+            initializer='glorot_uniform',
+            trainable=True
+        )
+        super(SelfAttention, self).build(input_shape)
+
+    def call(self, inputs):
+        # Score each position: tanh(xW + b) · u
+        score = tf.nn.tanh(tf.matmul(inputs, self.W) + self.b)
+        attention_weights = tf.nn.softmax(tf.matmul(score, self.u), axis=1)
+
+        # Weighted sum of inputs
+        context_vector = tf.reduce_sum(inputs * attention_weights, axis=1)
+        return context_vector
+
+    def get_config(self):
+        cfg = super(SelfAttention, self).get_config()
+        cfg.update({'attention_units': self.attention_units})
+        return cfg
+
+
+def build_attention_cnn_model(n_classes: int,
+                              name: str = "attention_cnn") -> Model:
+    """
+    Build a CNN model enhanced with Self-Attention mechanism.
+
+    This combines the best of both worlds:
+    - CNN conv layers extract local rhythmic patterns (gaṇas, syllable groups)
+    - Self-Attention learns which positions are metrically important
+      (similar to how poets focus on yati/prasa positions)
+
+    Architecture:
+        Embedding → Conv1D(256,5) → BN → MaxPool
+        → Conv1D(128,3) → BN → MaxPool
+        → Conv1D(64,3) → BN
+        → SelfAttention(64)     ← instead of GlobalMaxPool
+        → Dropout → Dense(256) → Dense(128)
+        → Dense(n_classes, softmax)
+
+    Args:
+        n_classes: Number of output classes
+        name: Model name
+
+    Returns:
+        Compiled Keras Model
+    """
+    input_layer = Input(shape=(config.MAX_SEQ_LEN,), name='text_input')
+
+    # Embedding
+    x = layers.Embedding(
+        input_dim=config.VOCAB_SIZE,
+        output_dim=config.EMBEDDING_DIM,
+        input_length=config.MAX_SEQ_LEN,
+        name='embedding'
+    )(input_layer)
+
+    # Conv blocks (same as base CNN)
+    x = layers.Conv1D(config.CONV1_FILTERS, config.CONV1_KERNEL,
+                      activation='relu', padding='same', name='conv1')(x)
+    x = layers.BatchNormalization(name='bn1')(x)
+    x = layers.MaxPooling1D(config.POOL_SIZE, name='pool1')(x)
+
+    x = layers.Conv1D(config.CONV2_FILTERS, config.CONV2_KERNEL,
+                      activation='relu', padding='same', name='conv2')(x)
+    x = layers.BatchNormalization(name='bn2')(x)
+    x = layers.MaxPooling1D(config.POOL_SIZE, name='pool2')(x)
+
+    x = layers.Conv1D(config.CONV3_FILTERS, config.CONV3_KERNEL,
+                      activation='relu', padding='same', name='conv3')(x)
+    x = layers.BatchNormalization(name='bn3')(x)
+
+    # Self-Attention instead of GlobalMaxPooling
+    # This learns WHICH positions in the poem are metrically important
+    x = SelfAttention(
+        attention_units=config.ATTENTION_UNITS,
+        name='self_attention'
+    )(x)
+
+    # Classification head
+    x = layers.Dropout(config.DROPOUT_RATE, name='dropout1')(x)
+    x = layers.Dense(config.DENSE1_UNITS, activation='relu', name='dense1')(x)
+    x = layers.Dropout(0.3, name='dropout2')(x)
+    x = layers.Dense(config.DENSE2_UNITS, activation='relu', name='dense2')(x)
+    output = layers.Dense(n_classes, activation='softmax',
+                          dtype='float32', name='output')(x)
+
+    model = Model(inputs=input_layer, outputs=output, name=name)
+
+    model.compile(
+        optimizer=Adam(learning_rate=config.LEARNING_RATE),
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
+
+    return model
+
+
 if __name__ == "__main__":
     configure_gpu()
 
     print("\n" + "=" * 60)
-    print("SINGLE-TASK CNN (Chandas Prediction)")
+    print("1. SINGLE-TASK CNN (Chandas Prediction)")
     print("=" * 60)
     m1 = build_cnn_model(n_classes=8)
     m1.summary()
 
     print("\n" + "=" * 60)
-    print("MULTI-TASK CNN (Chandas + Source)")
+    print("2. MULTI-TASK CNN (Chandas + Source)")
     print("=" * 60)
     m2 = build_multitask_cnn(n_chandas=8, n_source=28)
     m2.summary()
+
+    print("\n" + "=" * 60)
+    print("3. BiLSTM BASELINE (Chandas Prediction)")
+    print("=" * 60)
+    m3 = build_bilstm_model(n_classes=8)
+    m3.summary()
+
+    print("\n" + "=" * 60)
+    print("4. ATTENTION CNN (Chandas Prediction)")
+    print("=" * 60)
+    m4 = build_attention_cnn_model(n_classes=8)
+    m4.summary()

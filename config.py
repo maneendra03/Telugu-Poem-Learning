@@ -24,17 +24,27 @@ TEST_JSON = os.path.join(PROCESSED_DIR, "telugu_test.json")
 # Model save paths
 CHANDAS_MODEL_PATH = os.path.join(MODEL_DIR, "cnn_chandas.keras")
 MULTITASK_MODEL_PATH = os.path.join(MODEL_DIR, "cnn_multitask.keras")
+BILSTM_MODEL_PATH = os.path.join(MODEL_DIR, "bilstm_chandas.keras")
+ATTENTION_CNN_MODEL_PATH = os.path.join(MODEL_DIR, "attention_cnn_chandas.keras")
 TOKENIZER_PATH = os.path.join(MODEL_DIR, "tokenizer.pkl")
 CHANDAS_ENCODER_PATH = os.path.join(MODEL_DIR, "chandas_encoder.pkl")
 CLASS_ENCODER_PATH = os.path.join(MODEL_DIR, "class_encoder.pkl")
 SOURCE_ENCODER_PATH = os.path.join(MODEL_DIR, "source_encoder.pkl")
 HISTORY_PATH = os.path.join(MODEL_DIR, "training_history.pkl")
+BILSTM_HISTORY_PATH = os.path.join(MODEL_DIR, "bilstm_history.pkl")
+ATTENTION_HISTORY_PATH = os.path.join(MODEL_DIR, "attention_history.pkl")
 
 # Output paths
 CONFUSION_MATRIX_PATH = os.path.join(OUTPUT_DIR, "confusion_matrix.png")
 TRAINING_CURVES_PATH = os.path.join(OUTPUT_DIR, "training_curves.png")
 MULTITASK_CONFUSION_PATH = os.path.join(OUTPUT_DIR, "multitask_confusion_matrix.png")
 MULTITASK_CURVES_PATH = os.path.join(OUTPUT_DIR, "multitask_training_curves.png")
+BILSTM_CONFUSION_PATH = os.path.join(OUTPUT_DIR, "bilstm_confusion_matrix.png")
+BILSTM_CURVES_PATH = os.path.join(OUTPUT_DIR, "bilstm_training_curves.png")
+ATTENTION_CONFUSION_PATH = os.path.join(OUTPUT_DIR, "attention_confusion_matrix.png")
+ATTENTION_CURVES_PATH = os.path.join(OUTPUT_DIR, "attention_training_curves.png")
+MODEL_COMPARISON_PATH = os.path.join(OUTPUT_DIR, "model_comparison.png")
+MISCLASS_REPORT_PATH = os.path.join(OUTPUT_DIR, "misclassification_analysis.txt")
 
 # ============================================================
 # TEXT PREPROCESSING
@@ -66,6 +76,13 @@ DENSE1_UNITS = 256              # Larger dense layer
 DENSE2_UNITS = 128              # Additional dense layer
 DROPOUT_RATE = 0.4              # Slightly lower dropout — more data retained
 
+# BiLSTM Architecture
+LSTM_UNITS = 128                # Units per LSTM direction (total 256 bidirectional)
+LSTM_DROPOUT = 0.3              # Recurrent dropout
+
+# Attention mechanism
+ATTENTION_UNITS = 64            # Attention hidden dimension
+
 # ============================================================
 # TRAINING — Optimized for H200 GPU throughput
 # ============================================================
@@ -79,6 +96,14 @@ REDUCE_LR_FACTOR = 0.5
 # Multi-task loss weights
 CHANDAS_LOSS_WEIGHT = 0.7
 SOURCE_LOSS_WEIGHT = 0.3
+
+# Curriculum learning — inspired by human rote learning
+# Phase 1: Train on easy/high-score poems first
+# Phase 2: Fine-tune on all poems
+CURRICULUM_ENABLED = True
+CURRICULUM_EASY_THRESHOLD = 0.85   # chandassu_score threshold for "easy" poems
+CURRICULUM_PHASE1_EPOCHS = 10      # Epochs on easy subset
+CURRICULUM_PHASE2_EPOCHS = 20      # Epochs on full dataset
 
 # ============================================================
 # LABELS

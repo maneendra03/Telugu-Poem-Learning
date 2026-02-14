@@ -6,13 +6,14 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Telugu Poem Text Input                        │
+│                    Telugu Poem Text Input                       │
 └────────────────────────┬────────────────────────────────────────┘
                          ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  DATA PREPROCESSING                                             │
+│  DATA PREPROCESSING (+ Curriculum Learning)                     │
 │  • Unicode NFC normalization    • Remove _x000D_ tokens         │
-│  • Telugu character filtering   • Length thresholding            │
+│  • Telugu character filtering   • Length thresholding           │
+│  • Curriculum: easy poems first → all poems (human rote learn)  │
 └────────────────────────┬────────────────────────────────────────┘
                          ▼
 ┌─────────────────────────────────────────────────────────────────┐
@@ -21,25 +22,22 @@
 │  • Text → Integer sequences → Pad to 400 tokens                 │
 │  • One-hot encode labels (chandas / class / source)             │
 └────────────────────────┬────────────────────────────────────────┘
-                         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  CNN MODEL (H200 GPU Optimized)                                 │
-│                                                                  │
-│  Embedding(30000, 200)                                          │
-│       ▼                                                          │
-│  Conv1D(256, k=5) → BatchNorm → MaxPool(3)   [syllable level]  │
-│       ▼                                                          │
-│  Conv1D(128, k=3) → BatchNorm → MaxPool(3)   [phrase level]    │
-│       ▼                                                          │
-│  Conv1D(64, k=3) → BatchNorm → GlobalMaxPool [structure level] │
-│       ▼                                                          │
-│  Dropout(0.4) → Dense(256) → Dense(128)                        │
-│       ▼                          ▼                               │
-│  ┌─────────────┐    ┌──────────────────┐                        │
-│  │ Chandas (8)  │    │ Source (28+)     │  ← Multi-task heads   │
-│  │  Softmax     │    │  Softmax         │                        │
-│  └─────────────┘    └──────────────────┘                        │
-└─────────────────────────────────────────────────────────────────┘
+                   ┌─────┴─────┬───────────────┐
+                   ▼           ▼               ▼
+    ┌──────────────────┐ ┌──────────┐ ┌──────────────────┐
+    │   CNN Model      │ │  BiLSTM  │ │ Attention CNN    │
+    │  Conv1D(256,k=5) │ │ BiLSTM   │ │ Conv1D + Self-   │
+    │  Conv1D(128,k=3) │ │  (128)   │ │ Attention Layer  │
+    │  Conv1D(64,k=3)  │ │ BiLSTM   │ │ (learns yati/    │
+    │  GlobalMaxPool   │ │  (64)    │ │  prasa focus)    │
+    └────────┬─────────┘ └─────┬────┘ └────────┬─────────┘
+             └─────────┬───────┘               │
+                       ▼                       ▼
+              ┌──────────────────────────────────────┐
+              │  Model Comparison & Evaluation       │
+              │  Accuracy / F1 / Confusion Matrix    │
+              │  Misclassification Analysis          │
+              └──────────────────────────────────────┘
 ```
 
 ## 🧠 Human Learning Inspiration
@@ -59,15 +57,15 @@ This system mirrors how humans learn to recognize poetic meter:
 ```
 CNN Telugu/
 ├── config.py                # Hyperparameters (H200-optimized)
-├── data_preprocessing.py    # Load, clean, merge datasets
+├── data_preprocessing.py    # Load, clean, merge + curriculum learning
 ├── feature_engineering.py   # Tokenize, pad, encode labels
-├── model.py                 # CNN architectures (single + multi-task)
-├── train.py                 # Training pipeline with callbacks
-├── evaluate.py              # Metrics, confusion matrix, curves
+├── model.py                 # 4 architectures: CNN, Multi-task, BiLSTM, Attention CNN
+├── train.py                 # 5 training modes incl. curriculum learning
+├── evaluate.py              # Metrics, confusion matrix, misclassification analysis
 ├── interpretation.py        # Meaning extraction + TF-IDF keywords
 ├── app.py                   # Streamlit web interface
-├── main.py                  # CLI entry point
-├── requirements.txt         # Python dependencies
+├── main.py                  # CLI entry point (10 modes)
+├── requirements.txt
 ├── Dataset/
 │   ├── Chandassu_Dataset.csv
 │   └── processed/
@@ -77,7 +75,7 @@ CNN Telugu/
 │       ├── telugu_test.json
 │       └── telugu_stats.json
 ├── models/                  # Saved models & encoders
-└── outputs/                 # Evaluation plots & reports
+└── outputs/                 # Evaluation plots, reports & comparisons
 ```
 
 ## 🚀 Quick Start
@@ -89,19 +87,20 @@ pip install -r requirements.txt
 
 ### 2. Train Models
 ```bash
-# Train both single-task and multi-task CNN
-python main.py --mode train
+# Train ALL models (CNN, Multi-task, BiLSTM, Attention, Curriculum)
+python main.py --mode train-all
 
-# Train only single-task (chandas prediction)
-python main.py --mode single
-
-# Train only multi-task (chandas + source)
-python main.py --mode multi
+# Train specific models
+python main.py --mode train          # CNN + Multi-task only
+python main.py --mode bilstm         # BiLSTM baseline only
+python main.py --mode attention      # Attention CNN only
+python main.py --mode curriculum     # Curriculum learning only
 ```
 
-### 3. Evaluate
+### 3. Evaluate & Compare
 ```bash
-python main.py --mode evaluate
+python main.py --mode evaluate    # Full evaluation + model comparison
+python main.py --mode compare     # Compare trained models only
 ```
 
 ### 4. Interactive Prediction
@@ -125,6 +124,30 @@ streamlit run app.py
 | Mixed Precision | FP16 | 2× speedup on H200 Tensor Cores |
 | Max Epochs | 30 | More training with early stopping |
 
+## 🆕 Key Improvements
+
+### 1. BiLSTM Baseline (CNN vs LSTM Comparison)
+A Bidirectional LSTM model trained on the same data for direct comparison:
+- **CNN** captures **local spatial patterns** (syllable groups, gaṇas)
+- **BiLSTM** captures **sequential dependencies** (long-range rhythm flow)
+- Auto-generates comparison chart (`outputs/model_comparison.png`)
+
+### 2. Self-Attention CNN
+Replaces GlobalMaxPooling with a learnable **Self-Attention layer** that discovers which positions in a poem are metrically important (yati/prasa positions) — mimicking how human readers focus on rhythmic anchor points.
+
+### 3. Curriculum Learning (Human Rote Learning)
+Two-phase training inspired by how humans learn poetry:
+- **Phase 1**: Train on "easy" poems with high `chandassu_score` (clear, regular meter)
+- **Phase 2**: Fine-tune on all poems including harder/irregular examples
+
+This directly models the project's central thesis: *learning inspired by human rote learning*.
+
+### 4. Misclassification Analysis
+- Identifies the **most confused meter pairs** (e.g., seesamu ↔ teytageethi)
+- Per-class error rates and confidence analysis
+- Flags **high-confidence misclassifications** (model is confident but wrong)
+- Shows actual misclassified poem samples
+
 ## 📊 Dataset Summary
 
 - **10,605 total poems** from 28+ satakams
@@ -145,9 +168,9 @@ streamlit run app.py
 ## 🔬 Research Extensions
 
 - Replace embeddings with [FastText Telugu](https://fasttext.cc/docs/en/crawl-vectors.html)
-- Add Bidirectional LSTM baseline for comparison
-- Integrate Attention mechanism on top of CNN features
-- Analyze misclassifications by meter type
+- Dual-input model: raw text + laghu/guru (L/G) sequences
+- Grad-CAM visualization of attention weights
+- K-fold cross-validation for robust results
 - Ablation study on augmented data impact
 - Study effect of poem length on classification accuracy
 

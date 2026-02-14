@@ -2,12 +2,14 @@
 Main Entry Point for CNN Telugu Poem Classification System.
 
 Usage:
-    python main.py --mode train       # Train both models
-    python main.py --mode evaluate    # Evaluate on test set
-    python main.py --mode predict     # Interactive prediction
-    python main.py --mode all         # Train + Evaluate
-    python main.py --mode single      # Train single-task only
-    python main.py --mode multi       # Train multi-task only
+    python main.py --mode train         # Train CNN + Multi-task
+    python main.py --mode train-all     # Train ALL models (CNN, BiLSTM, Attention, Curriculum)
+    python main.py --mode bilstm        # Train BiLSTM baseline only
+    python main.py --mode attention     # Train Attention CNN only
+    python main.py --mode curriculum    # Train with curriculum learning
+    python main.py --mode evaluate      # Evaluate all & compare
+    python main.py --mode predict       # Interactive prediction
+    python main.py --mode compare       # Compare all trained models
 """
 
 import argparse
@@ -19,21 +21,28 @@ import tensorflow as tf
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 import config
-from model import configure_gpu
-from data_preprocessing import prepare_dataset, clean_text
+from model import configure_gpu, SelfAttention
+from data_preprocessing import prepare_dataset, clean_text, prepare_curriculum_data
 from feature_engineering import prepare_features
-from train import train_single_task, train_multitask
-from evaluate import evaluate_single_task, evaluate_multitask
+from train import (
+    train_single_task, train_multitask,
+    train_bilstm, train_attention_cnn, train_with_curriculum
+)
+from evaluate import (
+    evaluate_single_task, evaluate_multitask,
+    analyze_misclassifications, compare_models
+)
 from interpretation import get_interpretation
 
 
 def run_train(mode: str = 'both'):
-    """Run the full training pipeline."""
+    """Run the training pipeline."""
     configure_gpu()
 
     print("\n" + "=" * 60)
     print("CNN TELUGU POEM CLASSIFICATION — TRAINING PIPELINE")
     print("=" * 60)
+    print(f"  Mode: {mode}")
     print(f"  GPU Config: Mixed Precision = {config.MIXED_PRECISION}")
     print(f"  Batch Size: {config.BATCH_SIZE}")
     print(f"  Embedding: {config.EMBEDDING_DIM}d")
@@ -52,33 +61,65 @@ def run_train(mode: str = 'both'):
     print("\n[Pipeline] Step 3/3: Training Models...")
     os.makedirs(config.MODEL_DIR, exist_ok=True)
 
-    if mode in ('single', 'both'):
+    if mode in ('single', 'both', 'all'):
         train_single_task(features)
 
-    if mode in ('multi', 'both'):
+    if mode in ('multi', 'both', 'all'):
         train_multitask(features)
 
+    if mode in ('bilstm', 'all'):
+        train_bilstm(features)
+
+    if mode in ('attention', 'all'):
+        train_attention_cnn(features)
+
+    if mode in ('curriculum', 'all'):
+        curriculum_data = prepare_curriculum_data(train_df, val_df, test_df)
+        train_with_curriculum(features, curriculum_data)
+
     print("\n✅ Training complete!")
-    return features
+    return features, train_df, val_df, test_df
 
 
 def run_evaluate():
-    """Run the full evaluation pipeline."""
+    """Run the full evaluation + comparison pipeline."""
     configure_gpu()
 
     print("\n" + "=" * 60)
-    print("CNN TELUGU POEM CLASSIFICATION — EVALUATION")
+    print("CNN TELUGU POEM CLASSIFICATION — FULL EVALUATION")
     print("=" * 60)
 
-    # Prepare data (needed for test set)
     train_df, val_df, test_df = prepare_dataset()
     features = prepare_features(train_df, val_df, test_df)
 
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+
+    # Standard evaluations
     evaluate_single_task(features)
     evaluate_multitask(features)
 
+    # Misclassification analysis
+    analyze_misclassifications(features, test_df)
+
+    # Model comparison (CNN vs BiLSTM vs Attention CNN)
+    compare_models(features)
+
     print("\n✅ Evaluation complete! Check outputs/ for visualizations.")
+
+
+def run_compare():
+    """Run only the model comparison."""
+    configure_gpu()
+
+    print("\n" + "=" * 60)
+    print("MODEL COMPARISON — CNN vs BiLSTM vs Attention CNN")
+    print("=" * 60)
+
+    train_df, val_df, test_df = prepare_dataset()
+    features = prepare_features(train_df, val_df, test_df)
+
+    os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+    compare_models(features)
 
 
 def run_predict():
@@ -89,9 +130,8 @@ def run_predict():
     print("CNN TELUGU POEM CLASSIFICATION — INTERACTIVE PREDICTION")
     print("=" * 60)
 
-    # Load models
     if not os.path.exists(config.TOKENIZER_PATH):
-        print("❌ Models not found! Run training first: python main.py --mode train")
+        print("❌ Models not found! Run training first: python main.py --mode train-all")
         sys.exit(1)
 
     with open(config.TOKENIZER_PATH, 'rb') as f:
@@ -99,9 +139,17 @@ def run_predict():
     with open(config.CHANDAS_ENCODER_PATH, 'rb') as f:
         chandas_encoder = pickle.load(f)
 
-    model = None
+    # Load available models
+    models_loaded = {}
     if os.path.exists(config.CHANDAS_MODEL_PATH):
-        model = tf.keras.models.load_model(config.CHANDAS_MODEL_PATH)
+        models_loaded['CNN'] = tf.keras.models.load_model(config.CHANDAS_MODEL_PATH)
+    if os.path.exists(config.BILSTM_MODEL_PATH):
+        models_loaded['BiLSTM'] = tf.keras.models.load_model(config.BILSTM_MODEL_PATH)
+    if os.path.exists(config.ATTENTION_CNN_MODEL_PATH):
+        models_loaded['Attention CNN'] = tf.keras.models.load_model(
+            config.ATTENTION_CNN_MODEL_PATH,
+            custom_objects={'SelfAttention': SelfAttention}
+        )
 
     multitask = None
     source_encoder = None
@@ -110,7 +158,18 @@ def run_predict():
         with open(config.SOURCE_ENCODER_PATH, 'rb') as f:
             source_encoder = pickle.load(f)
 
+    print(f"\nLoaded models: {list(models_loaded.keys())}")
+    if multitask:
+        print("Multi-task model: loaded")
     print("\nEnter Telugu poem text (press Enter twice to predict, 'quit' to exit):\n")
+
+    chandas_to_class = {
+        'seesamu': 'vupajaathi', 'teytageethi': 'vupajaathi',
+        'aataveladi': 'vupajaathi',
+        'mattebhamu': 'vruttamu', 'champakamaala': 'vruttamu',
+        'vutpalamaala': 'vruttamu', 'saardulamu': 'vruttamu',
+        'kandamu': 'jaathi'
+    }
 
     while True:
         lines = []
@@ -126,8 +185,6 @@ def run_predict():
 
         poem_text = '\n'.join(lines)
         cleaned = clean_text(poem_text)
-
-        # Tokenize
         sequence = tokenizer.texts_to_sequences([cleaned])
         padded = pad_sequences(sequence, maxlen=config.MAX_SEQ_LEN,
                                padding='post', truncating='post')
@@ -135,31 +192,22 @@ def run_predict():
         print("\n📊 Results:")
         print("─" * 40)
 
-        # Single-task prediction
-        if model:
+        # Predict with all available models
+        for model_name, model in models_loaded.items():
             pred = model.predict(padded, verbose=0)[0]
             chandas_idx = np.argmax(pred)
             chandas = chandas_encoder.classes_[chandas_idx]
             confidence = pred[chandas_idx]
-            print(f"  Chandas:    {chandas} ({confidence*100:.1f}%)")
+            print(f"  [{model_name}] Chandas: {chandas} ({confidence*100:.1f}%) "
+                  f"| Class: {chandas_to_class.get(chandas, 'unknown')}")
 
-            # Map to class
-            chandas_to_class = {
-                'seesamu': 'vupajaathi', 'teytageethi': 'vupajaathi',
-                'aataveladi': 'vupajaathi',
-                'mattebhamu': 'vruttamu', 'champakamaala': 'vruttamu',
-                'vutpalamaala': 'vruttamu', 'saardulamu': 'vruttamu',
-                'kandamu': 'jaathi'
-            }
-            print(f"  Class:      {chandas_to_class.get(chandas, 'unknown')}")
-
-        # Multi-task prediction
+        # Multi-task source prediction
         if multitask and source_encoder:
             chandas_pred, source_pred = multitask.predict(padded, verbose=0)
             source_idx = np.argmax(source_pred[0])
             source = source_encoder.classes_[source_idx]
             source_conf = source_pred[0][source_idx]
-            print(f"  Source:     {source} ({source_conf*100:.1f}%)")
+            print(f"  [Multi-task] Source: {source} ({source_conf*100:.1f}%)")
 
         # Interpretation
         interp = get_interpretation(poem_text)
@@ -172,21 +220,24 @@ def run_predict():
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="CNN Telugu Poem Classification System",
+        description="CNN Telugu Poem Classification System (Enhanced)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py --mode train       Train both models
-  python main.py --mode evaluate    Evaluate on test set
-  python main.py --mode predict     Interactive prediction
-  python main.py --mode all         Train + Evaluate
-  python main.py --mode single      Train single-task CNN only
-  python main.py --mode multi       Train multi-task CNN only
+  python main.py --mode train         Train CNN + Multi-task models
+  python main.py --mode train-all     Train ALL models (CNN, BiLSTM, Attention, Curriculum)
+  python main.py --mode bilstm        Train BiLSTM baseline only
+  python main.py --mode attention     Train Attention CNN only
+  python main.py --mode curriculum    Train with curriculum learning
+  python main.py --mode evaluate      Evaluate all models + comparison
+  python main.py --mode compare       Compare trained models only
+  python main.py --mode predict       Interactive prediction
         """
     )
     parser.add_argument(
         '--mode', type=str, required=True,
-        choices=['train', 'evaluate', 'predict', 'all', 'single', 'multi'],
+        choices=['train', 'train-all', 'evaluate', 'predict', 'compare',
+                 'single', 'multi', 'bilstm', 'attention', 'curriculum'],
         help='Operation mode'
     )
 
@@ -194,18 +245,24 @@ Examples:
 
     if args.mode == 'train':
         run_train(mode='both')
+    elif args.mode == 'train-all':
+        run_train(mode='all')
     elif args.mode == 'single':
         run_train(mode='single')
     elif args.mode == 'multi':
         run_train(mode='multi')
+    elif args.mode == 'bilstm':
+        run_train(mode='bilstm')
+    elif args.mode == 'attention':
+        run_train(mode='attention')
+    elif args.mode == 'curriculum':
+        run_train(mode='curriculum')
     elif args.mode == 'evaluate':
         run_evaluate()
+    elif args.mode == 'compare':
+        run_compare()
     elif args.mode == 'predict':
         run_predict()
-    elif args.mode == 'all':
-        features = run_train(mode='both')
-        evaluate_single_task(features)
-        evaluate_multitask(features)
 
 
 if __name__ == "__main__":
