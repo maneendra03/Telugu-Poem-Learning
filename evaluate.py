@@ -233,8 +233,13 @@ def evaluate_multitask(features: dict):
     source_labels = list(source_encoder.classes_)
 
     print("--- Source Classification Report ---")
+    # Only report on classes present in predictions/test (test may not have all classes)
+    unique_source_labels = sorted(set(source_true) | set(source_pred))
+    source_target_names = [source_labels[i] for i in unique_source_labels if i < len(source_labels)]
     print(classification_report(source_true, source_pred,
-                                target_names=source_labels, digits=4, zero_division=0))
+                                labels=unique_source_labels,
+                                target_names=source_target_names,
+                                digits=4, zero_division=0))
 
     # Confusion matrices
     plot_confusion_matrix(chandas_true, chandas_pred, chandas_labels,
